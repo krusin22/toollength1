@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <!-- Viewport-fit=cover ช่วยให้แสดงผลเต็มจอมือถือรุ่นใหม่ทะลุรอยบาก ป้องกันการซูมมั่ว -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Measurement Hero: Universal App - ป.3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Prompt:wght@400;600;700&display=swap');
+        
+        * {
+            -webkit-tap-highlight-color: transparent; 
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: 'Prompt', sans-serif; 
+            background-color: #020617; /* สีพื้นหลังส่วนที่เหลือบนจอคอม */
+            color: white;
+            /* รองรับมือถือรุ่นเก่า (vh) และรุ่นใหม่ (dvh) */
+            height: 100vh;
+            height: 100dvh; 
+            overflow: hidden; 
+            touch-action: manipulation;
+            -webkit-user-select: none; 
+            user-select: none; 
+            overscroll-behavior-y: none;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* Container หลัก จัดการให้พอดีบนมือถือ และอยู่กึ่งกลางสวยงามบน PC/iPad */
+        #app-container {
+            width: 100%;
+            height: 100%;
+            max-width: 600px; /* จำกัดความกว้างบน PC ไม่ให้ยืดเกินไป */
+            background-color: #0f172a;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        /* Safe Area สำหรับ iPhone / มือถือมีรอยบาก */
+        .safe-pt { padding-top: env(safe-area-inset-top, 10px); }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom, 10px); }
+        .safe-px { 
+            padding-left: env(safe-area-inset-left, 10px); 
+            padding-right: env(safe-area-inset-right, 10px); 
+        }
+
+        h1, h2, h3, .rpg-font { font-family: 'Chakra Petch', sans-serif; }
+
+        .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake { 10%, 90% { transform: translate3d(-3px, 0, 0); } 20%, 80% { transform: translate3d(3px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-6px, 0, 0); } 40%, 60% { transform: translate3d(6px, 0, 0); } }
+
+        .attack-anim { animation: popAttack 0.3s ease-out; }
+        @keyframes popAttack { 0% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(0.8) rotate(-10deg); filter: brightness(2) drop-shadow(0 0 20px #f87171); } 100% { transform: scale(1); filter: brightness(1); } }
+
+        .bounce-in { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes bounceIn { 0% { transform: scale(0); opacity: 0; } 80% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+
+        .float { animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+        .chest-wobble { animation: chestWobble 2s infinite; cursor: pointer; transition: transform 0.2s; }
+        .chest-wobble:active { transform: scale(0.9); }
+        @media (hover: hover) { .chest-wobble:hover { transform: scale(1.1); filter: drop-shadow(0 0 10px gold); } }
+        @keyframes chestWobble { 0%, 100% { transform: rotate(0deg); } 5%, 15% { transform: rotate(-8deg); } 10%, 20% { transform: rotate(8deg); } 25% { transform: rotate(0deg); } }
+
+        .game-btn { transition: transform 0.1s, border-width 0.1s, margin-top 0.1s; border-bottom: 6px solid rgba(0,0,0,0.3); }
+        .game-btn:active { transform: translateY(6px); border-bottom-width: 0px; margin-top: 6px; }
+
+        .floating-text { position: absolute; font-size: clamp(1.5rem, 5vw, 2.5rem); font-weight: bold; text-shadow: 2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff; animation: floatUpFade 1s forwards; pointer-events: none; z-index: 50; }
+        .text-dmg { color: #ef4444; }
+
+        @keyframes floatUpFade { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-80px) scale(1.3); opacity: 0; } }
+
+        .battle-bg {
+            background: linear-gradient(to bottom, #1e1b4b 0%, #312e81 100%);
+            background-image: radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, transparent 70%);
+        }
+        
+        .timer-danger { background-color: #ef4444 !important; box-shadow: 0 0 10px #ef4444; }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        
+        <!-- Status Bar -->
+        <header class="bg-slate-900 border-b border-slate-700 p-2 safe-pt safe-px flex justify-between items-center z-10 shadow-md">
+            <div class="flex items-center gap-2">
+                <div class="bg-indigo-600 w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-xl border border-indigo-400">
+                    ♾️
+                </div>
+                <div>
+                    <h1 class="text-sm sm:text-lg font-bold text-white rpg-font tracking-wide leading-tight">ตะลุยด่านกาชา</h1>
+                    <p class="text-indigo-300 text-[9px] sm:text-xs font-bold">คณิต ป.3</p>
+                </div>
+            </div>
+            
+            <div class="flex gap-2">
+                <div class="bg-slate-800 px-2 py-1 rounded-lg border border-slate-600 text-center flex flex-col justify-center min-w-[50px]">
+                    <span class="text-[9px] sm:text-[10px] text-slate-400 block font-bold mb-0.5">HP</span>
+                    <div id="hp-container" class="flex gap-0.5 text-red-500 text-xs sm:text-sm justify-center"></div>
+                </div>
+                <div class="bg-slate-800 px-2 py-1 rounded-lg border border-slate-600 text-center flex flex-col justify-center min-w-[60px]">
+                    <span class="text-[9px] sm:text-[10px] text-slate-400 block font-bold mb-0.5">คะแนน</span>
+                    <div id="score-display" class="text-emerald-400 text-sm sm:text-base font-bold rpg-font leading-none">0</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Battle Stage -->
+        <main id="battle-stage" class="flex-1 flex flex-col items-center justify-center relative battle-bg p-3 safe-px w-full overflow-hidden">
+            
+            <!-- แถบแสดงเวลา -->
+            <div class="absolute top-2 w-full max-w-md px-3 text-center z-10">
+                <div class="flex justify-between items-end mb-1">
+                    <p id="level-indicator" class="text-amber-300 font-bold text-xs sm:text-sm drop-shadow-md rpg-font">มอนสเตอร์ที่ 1</p>
+                    <div class="flex items-center gap-1">
+                        <span id="modifier-alert" class="text-[9px] sm:text-[10px] font-bold bounce-in hidden"></span>
+                        <p id="timer-text" class="text-sky-300 font-bold text-[9px] sm:text-[10px] bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600 shadow-sm">⏱️ 15.0 วิ</p>
+                    </div>
+                </div>
+                
+                <div class="w-full bg-slate-800 h-2 rounded-full border border-slate-900 overflow-hidden shadow-inner mb-1">
+                    <div id="timer-bar" class="bg-sky-400 h-full w-full transition-all duration-[50ms] ease-linear"></div>
+                </div>
+
+                <div class="w-full bg-slate-800 h-1 rounded-full border border-slate-900 overflow-hidden opacity-50">
+                    <div id="boss-hp-bar" class="bg-red-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <div id="monster-container" class="flex flex-col items-center float mt-10 w-full max-w-[95%]">
+                <div id="monster-emoji" class="text-[5rem] sm:text-[6rem] mb-2 sm:mb-4 drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)]">❓</div>
+                
+                <div class="bg-white text-slate-800 p-3 sm:p-5 rounded-2xl border-4 border-indigo-200 shadow-lg text-center relative w-full">
+                    <div class="absolute -top-3 sm:-top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-900 px-3 sm:px-4 py-0.5 rounded-full font-bold text-[9px] sm:text-[10px] border border-white shadow-sm whitespace-nowrap">
+                        ปัญหาที่ต้องแก้!
+                    </div>
+                    <h2 id="question-title" class="text-base sm:text-xl font-bold text-indigo-700 mb-1 mt-1 rpg-font leading-tight">กำลังโหลด...</h2>
+                    <p id="question-desc" class="text-[11px] sm:text-sm font-medium text-slate-600 leading-snug">รอสักครู่</p>
+                </div>
+            </div>
+            
+            <div id="feedback-text" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-3xl sm:text-5xl font-bold opacity-0 pointer-events-none transition-opacity duration-200 z-50 text-center w-full"></div>
+
+            <!-- หน้าต่างสุ่มกล่องสมบัติ (Gacha) -->
+            <div id="reward-overlay" class="absolute inset-0 bg-slate-900/95 hidden flex-col items-center justify-center z-40 p-4 safe-px">
+                <h2 class="text-3xl sm:text-4xl font-bold text-amber-400 mb-1 rpg-font bounce-in">✨ ตอบถูก! ✨</h2>
+                <p class="text-white text-xs sm:text-sm mb-6 font-medium text-center">แตะสุ่มกล่องสมบัติรับ 1-50 แต้ม<br>(ระวังโดนแกล้งล่ะ!)</p>
+                
+                <div class="flex gap-3 sm:gap-6 justify-center w-full">
+                    <div id="chest-0" class="chest-wobble flex flex-col items-center" onclick="openChest(0)">
+                        <span class="text-5xl sm:text-6xl drop-shadow-lg">🎁</span>
+                    </div>
+                    <div id="chest-1" class="chest-wobble flex flex-col items-center" onclick="openChest(1)" style="animation-delay: 0.1s">
+                        <span class="text-5xl sm:text-6xl drop-shadow-lg">📦</span>
+                    </div>
+                    <div id="chest-2" class="chest-wobble flex flex-col items-center" onclick="openChest(2)" style="animation-delay: 0.2s">
+                        <span class="text-5xl sm:text-6xl drop-shadow-lg">🧰</span>
+                    </div>
+                </div>
+
+                <div id="reward-result" class="mt-6 text-center hidden w-full">
+                    <div id="reward-emoji" class="text-4xl sm:text-5xl mb-1 bounce-in">💎</div>
+                    <p id="reward-desc" class="text-2xl sm:text-3xl font-bold rpg-font text-amber-400 leading-tight"></p>
+                    <p id="reward-extra" class="text-sm sm:text-base font-bold mt-1 bounce-in leading-snug"></p>
+                </div>
+            </div>
+        </main>
+
+        <!-- แผงปุ่มกด 2x2 รองรับทุกขนาดจอ -->
+        <section id="tool-panel" class="bg-slate-900 p-3 safe-pb safe-px border-t-2 border-slate-800 z-20 w-full">
+            <p class="text-center text-slate-400 font-bold mb-2 text-[9px] sm:text-[10px]">👇 แตะเลือกอาวุธ โจมตีก่อนเวลาหมด 👇</p>
+            <div id="tool-grid" class="grid grid-cols-2 gap-2 sm:gap-3 w-full relative">
+                
+                <button data-tool="ruler" onclick="checkAnswer('ruler')" class="game-btn bg-sky-500 text-white rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center relative">
+                    <span class="text-2xl sm:text-3xl mb-0.5 pointer-events-none">📏</span>
+                    <span class="font-bold text-[13px] sm:text-base rpg-font pointer-events-none leading-none">ไม้บรรทัด</span>
+                    <span class="text-[8px] sm:text-[9px] bg-sky-700 px-1.5 py-0.5 rounded-full mt-1 pointer-events-none whitespace-nowrap">ชิ้นเล็ก/เส้นตรง</span>
+                </button>
+                
+                <button data-tool="tape" onclick="checkAnswer('tape')" class="game-btn bg-pink-500 text-white rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center relative">
+                    <span class="text-2xl sm:text-3xl mb-0.5 pointer-events-none">🎗️</span>
+                    <span class="font-bold text-[13px] sm:text-base rpg-font pointer-events-none leading-none">สายวัดตัว</span>
+                    <span class="text-[8px] sm:text-[9px] bg-pink-700 px-1.5 py-0.5 rounded-full mt-1 pointer-events-none whitespace-nowrap">โค้งงอ/รอบตัว</span>
+                </button>
+                
+                <button data-tool="meter" onclick="checkAnswer('meter')" class="game-btn bg-amber-500 text-white rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center relative">
+                    <span class="text-2xl sm:text-3xl mb-0.5 pointer-events-none">🪵</span>
+                    <span class="font-bold text-[13px] sm:text-base rpg-font pointer-events-none leading-none">ไม้เมตร</span>
+                    <span class="text-[8px] sm:text-[9px] bg-amber-700 px-1.5 py-0.5 rounded-full mt-1 pointer-events-none whitespace-nowrap">แข็งยาว/ตัดผ้า</span>
+                </button>
+                
+                <button data-tool="measuring_tape" onclick="checkAnswer('measuring_tape')" class="game-btn bg-emerald-500 text-white rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center relative">
+                    <span class="text-2xl sm:text-3xl mb-0.5 pointer-events-none">🧰</span>
+                    <span class="font-bold text-[13px] sm:text-base rpg-font pointer-events-none leading-none">ตลับเมตร</span>
+                    <span class="text-[8px] sm:text-[9px] bg-emerald-700 px-1.5 py-0.5 rounded-full mt-1 pointer-events-none whitespace-nowrap">ยืดหด/กว้างๆ</span>
+                </button>
+                
+            </div>
+            <!-- ช่องว่างเผื่อขีด Home Indicator ด้านล่างสุดของ iPhone -->
+            <div class="h-2 sm:h-4 w-full"></div>
+        </section>
+
+        <!-- หน้าจอเริ่มเกม / สรุปผล -->
+        <div id="overlay-screen" class="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-50 p-4 safe-px text-center">
+            <div class="bounce-in bg-slate-800 p-5 sm:p-6 rounded-[1.5rem] border-4 border-indigo-500 w-[95%] shadow-2xl relative">
+                <div id="overlay-emoji" class="text-5xl sm:text-6xl mb-3">🌌</div>
+                <h2 id="overlay-title" class="text-2xl sm:text-3xl font-bold text-white mb-2 rpg-font leading-tight">ตะลุยด่านปั่นๆ!</h2>
+                <p id="overlay-desc" class="text-slate-300 text-[11px] sm:text-xs mb-5 leading-relaxed">
+                    ตอบให้ทัน! เริ่มที่ 15 วิ <span class="text-red-400 font-bold">ลดลงจนเหลือ 5 วิ</span><br>
+                    สุ่มรับคะแนน 1-50 <b>พร้อมบัฟและคำสาป!</b><br>
+                    ระวังคำสาปสลับปุ่มให้ดีล่ะ 👻
+                </p>
+                <button onclick="startGame()" class="game-btn bg-gradient-to-r from-indigo-500 to-purple-600 w-full text-white font-bold py-3 sm:py-4 rounded-xl text-lg sm:text-xl flex items-center justify-center gap-2 rpg-font">
+                    <i class="fa-solid fa-play"></i> เริ่มโดนแกล้ง!
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- โค้ดเกมคงเดิมทั้งหมด -->
+    <script>
+        const generatorData = {
+            ruler: { actors: ["หนูน้อย", "นักเรียน", "คุณครู", "ช่างวาดรูป"], items: [{name: "ดินสอใหม่", emoji: "✏️"}, {name: "ยางลบ", emoji: "🧽"}, {name: "แปรงสีฟัน", emoji: "🪥"}, {name: "สมุดเลข", emoji: "📓"}, {name: "ช้อน", emoji: "🥄"}], reasons: ["เพื่อกะขนาดให้ถูก", "เพราะเพิ่งซื้อมาใหม่"] },
+            tape: { actors: ["คุณแม่", "ช่างตัดเสื้อ", "ช่างทำชุดเกราะ"], items: [{name: "รอบเอว", emoji: "💃"}, {name: "รอบศีรษะ", emoji: "🪖"}, {name: "รอบข้อมือ", emoji: "⌚"}, {name: "รอบคอหมา", emoji: "🐕"}], reasons: ["เพื่อตัดเสื้อ", "เพื่อสั่งซื้อของออนไลน์"] },
+            meter: { actors: ["คุณครู", "ภารโรง", "ช่างไม้", "แม่ค้าขายผ้า"], items: [{name: "โต๊ะเรียน", emoji: "🪑"}, {name: "ผ้าม่าน", emoji: "👗"}, {name: "ขอบกระดานดำ", emoji: "🏫"}, {name: "หน้าต่าง", emoji: "🪟"}], reasons: ["เพื่อตัดแบ่ง", "เพื่อซ่อมแซมส่วนที่พัง"] },
+            measuring_tape: { actors: ["วิศวกร", "ครูพละ", "ช่างก่อสร้าง"], items: [{name: "สนามฟุตซอล", emoji: "⚽"}, {name: "ห้องเรียน", emoji: "🚪"}, {name: "สระว่ายน้ำ", emoji: "🏊‍♂️"}, {name: "รถตู้", emoji: "🚐"}], reasons: ["เพราะพื้นที่กว้างมากๆ", "เพื่อคำนวณพื้นที่จัดงาน"] }
+        };
+
+        function generateRandomQuestion() {
+            const types = ['ruler', 'tape', 'meter', 'measuring_tape'];
+            const targetAns = types[Math.floor(Math.random() * types.length)];
+            const data = generatorData[targetAns];
+            
+            const actor = data.actors[Math.floor(Math.random() * data.actors.length)];
+            const item = data.items[Math.floor(Math.random() * data.items.length)];
+            const reason = data.reasons[Math.floor(Math.random() * data.reasons.length)];
+            
+            let desc = "";
+            const pattern = Math.floor(Math.random() * 2);
+            if (pattern === 0) desc = `${actor}ต้องการวัด${item.name} ${reason} ควรใช้อะไรดี?`;
+            else desc = `อยากรู้จังว่า${item.name}ยาวเท่าไหร่ ${actor}จะใช้อะไรวัดดี`;
+
+            return { emoji: item.emoji, title: item.name, desc: desc, ans: targetAns };
+        }
+
+        let hp = 5; let score = 0; let monsterCount = 1;
+        let currentQuestion = null; let isAnimating = false;
+        
+        let timerInterval = null; let maxTime = 15.0; let timeLeft = 15.0;
+        let timeModifierNextRound = 0; let shuffleNextRound = false;
+        let isChestOpening = false; let currentRewards = [];
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            
+            if (type === 'hit') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(1760, now + 0.1);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'hurt') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+                gain.gain.setValueAtTime(0.3, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'heal' || type === 'epic') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(523.25, now); osc.frequency.setValueAtTime(1046.50, now + 0.2);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now); osc.stop(now + 0.5);
+            } else if (type === 'prank') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(150, now + 0.4);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now); osc.stop(now + 0.4);
+            }
+        }
+
+        function updateHP() {
+            const container = document.getElementById('hp-container');
+            container.innerHTML = '';
+            for(let i=0; i<5; i++) {
+                if(i < hp) container.innerHTML += '<i class="fa-solid fa-heart bounce-in"></i>';
+                else container.innerHTML += '<i class="fa-solid fa-heart-crack text-slate-700"></i>';
+            }
+        }
+
+        function startGame() {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            document.getElementById('overlay-screen').style.display = 'none';
+            hp = 5; score = 0; monsterCount = 1;
+            timeModifierNextRound = 0; shuffleNextRound = false;
+            
+            updateHP(); document.getElementById('score-display').innerText = score;
+            loadNextQuestion();
+        }
+
+        function loadNextQuestion() {
+            isAnimating = false;
+            document.getElementById('tool-panel').style.pointerEvents = 'auto';
+            document.getElementById('tool-panel').style.opacity = '1';
+            
+            currentQuestion = generateRandomQuestion();
+            document.getElementById('level-indicator').innerText = `ด่านที่ ${monsterCount}`;
+            document.getElementById('boss-hp-bar').style.width = '100%';
+            
+            const emojiEl = document.getElementById('monster-emoji');
+            emojiEl.innerText = currentQuestion.emoji;
+            emojiEl.className = "text-[5rem] sm:text-[6rem] mb-2 sm:mb-4 drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)] bounce-in float";
+            
+            document.getElementById('question-title').innerText = currentQuestion.title;
+            document.getElementById('question-desc').innerText = currentQuestion.desc;
+
+            const toolGrid = document.getElementById('tool-grid');
+            let btns = Array.from(toolGrid.children);
+            
+            if (shuffleNextRound) {
+                btns.sort(() => Math.random() - 0.5);
+                shuffleNextRound = false; 
+            } else {
+                const order = ['ruler', 'tape', 'meter', 'measuring_tape'];
+                btns.sort((a,b) => order.indexOf(a.dataset.tool) - order.indexOf(b.dataset.tool));
+            }
+            btns.forEach(btn => toolGrid.appendChild(btn));
+
+            let baseTime = Math.max(5.0, 15.0 - Math.floor((monsterCount - 1) / 3));
+            maxTime = Math.max(3.0, baseTime + timeModifierNextRound);
+            timeLeft = maxTime;
+            
+            const modAlert = document.getElementById('modifier-alert');
+            if (timeModifierNextRound > 0) {
+                modAlert.innerText = `+${timeModifierNextRound} วิ!`;
+                modAlert.className = "text-[9px] sm:text-[10px] font-bold text-emerald-400 bounce-in";
+                modAlert.style.display = 'block';
+            } else if (timeModifierNextRound < 0) {
+                modAlert.innerText = `${timeModifierNextRound} วิ!`;
+                modAlert.className = "text-[9px] sm:text-[10px] font-bold text-red-500 bounce-in";
+                modAlert.style.display = 'block';
+            } else {
+                modAlert.style.display = 'none';
+            }
+            
+            timeModifierNextRound = 0; 
+            startTimer();
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            const bar = document.getElementById('timer-bar');
+            const txt = document.getElementById('timer-text');
+            bar.classList.remove('timer-danger');
+            
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.05; 
+                if (timeLeft <= 0) {
+                    timeLeft = 0; stopTimer(); handleTimeout();
+                }
+                txt.innerText = `⏱️ ${timeLeft.toFixed(1)} วิ`;
+                const percent = (timeLeft / maxTime) * 100;
+                bar.style.width = `${percent}%`;
+                
+                if (timeLeft <= 3.0 && !bar.classList.contains('timer-danger')) {
+                    bar.classList.add('timer-danger');
+                }
+            }, 50);
+        }
+
+        function stopTimer() { clearInterval(timerInterval); }
+
+        function handleTimeout() {
+            if (isAnimating || hp <= 0) return;
+            isAnimating = true; document.getElementById('tool-panel').style.pointerEvents = 'none';
+            
+            playSound('hurt'); hp--; updateHP();
+            const stage = document.getElementById('battle-stage');
+            stage.classList.add('shake');
+            showFloatingText("-1 HP", stage, "text-dmg");
+            showFeedback("หมดเวลา! ⏰", "text-red-500 drop-shadow-md");
+
+            setTimeout(() => {
+                stage.classList.remove('shake');
+                if (hp <= 0) endGame(); else { monsterCount++; loadNextQuestion(); }
+            }, 1000);
+        }
+
+        function checkAnswer(selectedTool) {
+            if (isAnimating || hp <= 0) return;
+            isAnimating = true; stopTimer(); 
+            document.getElementById('tool-panel').style.pointerEvents = 'none';
+            const stage = document.getElementById('battle-stage');
+            
+            if (selectedTool === currentQuestion.ans) {
+                playSound('hit');
+                document.getElementById('boss-hp-bar').style.width = '0%';
+                const monsterEl = document.getElementById('monster-container');
+                monsterEl.classList.remove('float'); monsterEl.classList.add('attack-anim');
+                showFeedback("ถูกเผง! 💥", "text-emerald-400 drop-shadow-md");
+
+                setTimeout(() => {
+                    monsterEl.classList.remove('attack-anim'); showGachaPhase(); 
+                }, 800);
+            } else {
+                playSound('hurt'); hp--; updateHP();
+                stage.classList.add('shake');
+                showFloatingText("-1 HP", stage, "text-dmg");
+                showFeedback("ยังไม่ใช่! ❌", "text-red-500 drop-shadow-md");
+
+                setTimeout(() => {
+                    stage.classList.remove('shake');
+                    if (hp <= 0) endGame(); else { monsterCount++; loadNextQuestion(); }
+                }, 800);
+            }
+        }
+
+        function generateRewards() {
+            const effects = [
+                { type: 'heal', text: "+1 HP 💖", emoji: "💖", color: "text-pink-400" },
+                { type: 'time_add', text: "+5 วิ ⏳", emoji: "🐢", color: "text-emerald-400" },
+                { type: 'time_sub', text: "-3 วิ ⏰", emoji: "⚡", color: "text-red-400" },
+                { type: 'shuffle', text: "สลับปุ่ม! 🌪️", emoji: "🌀", color: "text-purple-400" },
+                { type: 'none', text: "เกลือ😜", emoji: "👻", color: "text-slate-400" }
+            ];
+            
+            let shuffledEffects = [...effects].sort(() => 0.5 - Math.random());
+            let selected = [];
+            for(let i=0; i<3; i++) {
+                const baseScore = Math.floor(Math.random() * 50) + 1;
+                selected.push({
+                    score: baseScore, type: shuffledEffects[i].type, text: shuffledEffects[i].text,
+                    emoji: shuffledEffects[i].emoji, color: shuffledEffects[i].color
+                });
+            }
+            return selected;
+        }
+
+        function showGachaPhase() {
+            isChestOpening = false; currentRewards = generateRewards();
+            
+            document.getElementById('tool-panel').style.opacity = '0.5';
+            document.getElementById('reward-overlay').style.display = 'flex';
+            document.getElementById('reward-result').style.display = 'none';
+            
+            for(let i=0; i<3; i++) {
+                const chest = document.getElementById(`chest-${i}`);
+                chest.style.display = 'flex'; chest.style.opacity = '1';
+                chest.style.pointerEvents = 'auto'; chest.className = "chest-wobble flex flex-col items-center";
+                chest.innerHTML = `<span class="text-5xl sm:text-6xl drop-shadow-lg">${['🎁','📦','🧰'][i]}</span>`;
+            }
+        }
+
+        function openChest(index) {
+            if (isChestOpening) return;
+            isChestOpening = true;
+            
+            const reward = currentRewards[index];
+            const chestEl = document.getElementById(`chest-${index}`);
+            
+            for(let i=0; i<3; i++) {
+                if(i !== index) document.getElementById(`chest-${i}`).style.opacity = '0.3';
+                document.getElementById(`chest-${i}`).style.pointerEvents = 'none';
+            }
+
+            chestEl.classList.remove('chest-wobble'); chestEl.classList.add('bounce-in');
+            
+            setTimeout(() => {
+                chestEl.style.display = 'none'; 
+                const resEl = document.getElementById('reward-result');
+                resEl.style.display = 'block';
+                document.getElementById('reward-emoji').innerText = reward.emoji;
+                document.getElementById('reward-desc').innerText = `+${reward.score} แต้ม`;
+                
+                const extraEl = document.getElementById('reward-extra');
+                extraEl.innerText = reward.text;
+                extraEl.className = `text-sm sm:text-base font-bold mt-1 bounce-in ${reward.color}`;
+
+                score += reward.score;
+                if (reward.type === 'heal') { playSound('heal'); if(hp < 5) hp++; } 
+                else if (reward.type === 'time_add') { playSound('epic'); timeModifierNextRound = 5; } 
+                else if (reward.type === 'time_sub') { playSound('prank'); timeModifierNextRound = -3; } 
+                else if (reward.type === 'shuffle') { playSound('prank'); shuffleNextRound = true; } 
+                else if (reward.type === 'none') { playSound('prank'); }
+                
+                updateHP(); document.getElementById('score-display').innerText = score;
+
+                setTimeout(() => {
+                    document.getElementById('reward-overlay').style.display = 'none';
+                    monsterCount++; loadNextQuestion();
+                }, 2000);
+            }, 300);
+        }
+
+        function showFeedback(text, colorClass) {
+            const fb = document.getElementById('feedback-text');
+            fb.innerText = text;
+            fb.className = `absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-3xl sm:text-4xl font-bold z-50 text-center w-full ${colorClass}`;
+            fb.style.opacity = '1';
+            setTimeout(() => { fb.style.opacity = '0'; }, 600);
+        }
+
+        function showFloatingText(text, parent, typeClass) {
+            const el = document.createElement('div');
+            el.className = `floating-text ${typeClass}`;
+            el.innerText = text; el.style.top = '35%'; el.style.left = '50%'; el.style.transform = 'translate(-50%, -50%)';
+            parent.appendChild(el); setTimeout(() => el.remove(), 1000);
+        }
+
+        function endGame() {
+            stopTimer(); playSound('hurt');
+            const overlay = document.getElementById('overlay-screen');
+            const title = document.getElementById('overlay-title');
+            const desc = document.getElementById('overlay-desc');
+            const emoji = document.getElementById('overlay-emoji');
+
+            overlay.style.display = 'flex';
+            overlay.querySelector('div').classList.remove('bounce-in');
+            void overlay.offsetWidth;
+            overlay.querySelector('div').classList.add('bounce-in');
+
+            emoji.innerText = "💀💔";
+            title.innerText = "เกมโอเวอร์!";
+            title.className = "text-2xl sm:text-3xl font-bold text-red-500 mb-2 rpg-font leading-tight";
+            desc.innerHTML = `เก่งมาก! พลังชีวิตหมดลงที่<br>
+                            เคลียร์ไป: <span class="text-emerald-400 font-bold text-sm sm:text-base">${monsterCount - 1}</span> ด่าน<br>
+                            คะแนนรวม: <span class="text-amber-400 font-bold text-sm sm:text-base">${score}</span> คะแนน`;
+            
+            const btn = overlay.querySelector('button');
+            btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> เล่นใหม่อีกครั้ง';
+        }
+    </script>
+</body>
+</html>
